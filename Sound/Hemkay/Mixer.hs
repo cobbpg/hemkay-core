@@ -173,9 +173,8 @@ mixToBuffer ptr len ((cnt,dat):rest) = do
         if len == 0 || null wd then return (wd,wcnt,stepi,stepf,vol,pan)
         else do let wsmp = head wd*vol
                     wcnt' = wcnt+stepf
-                    wd' = drop stepi wd
-                    (wd'',wcnt'') = if wcnt' < 1 then (wd',wcnt')
-                                    else (tail wd',wcnt'-1)
+                    (wd'',wcnt'') = if wcnt' < 1 then (drop stepi wd,wcnt')
+                                    else (drop (stepi+1) wd,wcnt'-1)
                 ml <- peek ptr
                 mr <- peekElemOff ptr 1
                 poke ptr (ml+wsmp*(1-pan))
@@ -199,9 +198,8 @@ nextSample (cnt, dat) = cnt' `seq` dat' `seq` smp `seq` Just (smp, (cnt', dat'))
                   wsmp = head wd*vol
                   acc' = Smp (ml+wsmp*(1-pan)) (mr+wsmp*pan)
                   wcnt' = wcnt+stepf
-                  wd' = drop stepi wd
-                  (wd'',wcnt'') = if wcnt' < 1 then (wd',wcnt')
-                                  else (tail wd',wcnt'-1)
+                  (wd'',wcnt'') = if wcnt' < 1 then (drop stepi wd,wcnt')
+                                  else (drop (stepi+1) wd,wcnt'-1)
 
 -- | Mix a whole song in chunks, pairing up the play states with the
 -- respective chunks.
@@ -229,9 +227,8 @@ mixChunk state = mixedChannels
                   where wsmp = head wd*vol
                         smp = Smp (ml+wsmp*(1-pan)) (mr+wsmp*pan)
                         wcnt' = wcnt+stepf
-                        wd' = drop stepi wd
-                        (wd'',wcnt'') = if wcnt' < 1 then (wd',wcnt')
-                                        else (tail wd',wcnt'-1)
+                        (wd'',wcnt'') = if wcnt' < 1 then (drop stepi wd,wcnt')
+                                        else (drop (stepi+1) wd,wcnt'-1)
 -}
 
 -- | Turn a song into a series of play states, one for each tick.
