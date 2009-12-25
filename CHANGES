@@ -1,0 +1,8 @@
+0.1.1 - 091220
+* fixed a potential crash when the end of a sample is reached
+
+0.1.0 - 091220
+* initial release
+* added haddock documentation
+* improved performance over initial Hemkay release
+* alternative ways to generate mixer output: unfoldr style or straight to buffer
