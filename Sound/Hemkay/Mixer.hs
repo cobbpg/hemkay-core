@@ -290,16 +290,17 @@ processNote :: Note -> ChannelState -> ChannelState
 processNote (Note per ins eff) cs = cs'''
   where ins' = fromMaybe (csInstrument cs) ins
         insStays = isNothing ins || ins == Just (csInstrument cs)
+        vol' = if isJust ins then volume ins' else csVolume cs
 
         -- Handling the new note
         cs' = if per == 0
               then cs { csInstrument = ins'
-                      , csVolume = if isJust ins then volume ins' else csVolume cs
+                      , csVolume = vol'
                       , csFineTune = fineTune ins'
                       , csWaveData = if insStays then csWaveData cs else wave ins'
                       }
               else cs { csInstrument = ins'
-                      , csVolume = volume ins'
+                      , csVolume = vol'
                       , csFineTune = fineTune ins'
                       , csWaveData = case eff of
                            [SampleOffset o] -> drop o (wave ins')

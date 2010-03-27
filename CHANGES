@@ -1,3 +1,6 @@
+0.1.2 - 100327
+* fixed a volume glitch when no instrument is given along with the note
+
 0.1.1 - 091220
 * fixed a potential crash when the end of a sample is reached
 
