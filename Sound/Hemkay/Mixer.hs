@@ -169,17 +169,18 @@ mixToBuffer ptr len ((cnt,dat):rest) = do
   dat' <- forM dat $ \d@(wd,wcnt,stepi,stepf,vol,pan) ->
     if null wd then return d
     else do
-      flip fix (mixLen,ptr,wd,wcnt) $ \fill (len,ptr,wd,wcnt) ->
-        if len == 0 || null wd then return (wd,wcnt,stepi,stepf,vol,pan)
+      flip fix (mixLen,0,wd,wcnt) $ \fill (len,idx,wd,wcnt) ->
+        if null wd || len == 0 then return (wd,wcnt,stepi,stepf,vol,pan)
         else do let wsmp = head wd*vol
+                    acc = wsmp*pan
                     wcnt' = wcnt+stepf
                     (wd'',wcnt'') = if wcnt' < 1 then (drop stepi wd,wcnt')
                                     else (drop (stepi+1) wd,wcnt'-1)
-                ml <- peek ptr
-                mr <- peekElemOff ptr 1
-                poke ptr (ml+wsmp*(1-pan))
-                pokeElemOff ptr 1 (mr+wsmp*pan)
-                fill (len-1,advancePtr ptr 2,wd'',wcnt'')
+                ml <- peekElemOff ptr idx
+                pokeElemOff ptr idx (ml+wsmp-acc)
+                mr <- peekElemOff ptr (idx+1)
+                pokeElemOff ptr (idx+1) (mr+acc)
+                fill (len-1,idx+2,wd'',wcnt'')
   if mixLen == len then return $ Just ((cnt-mixLen,dat'):rest)
     else mixToBuffer (advancePtr ptr (mixLen*2)) (len-mixLen) rest
 

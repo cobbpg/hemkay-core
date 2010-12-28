@@ -15,7 +15,6 @@ import Data.Binary.Get
 import Data.Bits
 import qualified Data.ByteString.Lazy as LS
 import qualified Data.ByteString.Char8 as S
-import Data.List
 import Data.Maybe
 import Data.Word
 import Sound.Hemkay.Music

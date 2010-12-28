@@ -1,5 +1,5 @@
 Name:                hemkay-core
-Version:             0.1.2
+Version:             0.1.3
 Cabal-Version:       >= 1.2
 Synopsis:            A device independent module music mixer
 Category:            sound, music
@@ -15,8 +15,8 @@ Description:
   back in real time.
 
 Author:              Patai Gergely
-Maintainer:          Patai Gergely (patai@iit.bme.hu)
-Copyright:           (c) 2009, Patai Gergely
+Maintainer:          Patai Gergely (patai.gergely@gmail.com)
+Copyright:           (c) 2010, Patai Gergely
 License:             BSD3
 License-File:        LICENSE
 Stability:           experimental
