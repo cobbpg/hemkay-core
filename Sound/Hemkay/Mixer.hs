@@ -168,14 +168,26 @@ mixToBuffer ptr len ((cnt,dat):rest) = do
   pokeArray ptr $ replicate (mixLen*2) 0
   dat' <- forM dat $ \d@(wd,wcnt,stepi,stepf,vol,pan) ->
     if null wd then return d
-    else do
-      flip fix (mixLen,0,wd,wcnt) $ \fill (len,idx,wd,wcnt) ->
+    else case stepi of
+      0 -> flip fix (mixLen,0,wd,wcnt) $ \fill (len,idx,wd,wcnt) ->
+        if null wd || len == 0 then return (wd,wcnt,stepi,stepf,vol,pan)
+        else do let wsmp = head wd*vol
+                    acc = wsmp*pan
+                    wcnt' = wcnt+stepf
+                    (wd'',wcnt'') = if wcnt' < 1 then (wd,wcnt')
+                                    else (tail wd,wcnt'-1)
+                ml <- peekElemOff ptr idx
+                pokeElemOff ptr idx (ml+wsmp-acc)
+                mr <- peekElemOff ptr (idx+1)
+                pokeElemOff ptr (idx+1) (mr+acc)
+                fill (len-1,idx+2,wd'',wcnt'')
+      _ -> flip fix (mixLen,0,wd,wcnt) $ \fill (len,idx,wd,wcnt) ->
         if null wd || len == 0 then return (wd,wcnt,stepi,stepf,vol,pan)
         else do let wsmp = head wd*vol
                     acc = wsmp*pan
                     wcnt' = wcnt+stepf
                     (wd'',wcnt'') = if wcnt' < 1 then (drop stepi wd,wcnt')
-                                    else (drop (stepi+1) wd,wcnt'-1)
+                                    else (drop stepi (tail wd),wcnt'-1)
                 ml <- peekElemOff ptr idx
                 pokeElemOff ptr idx (ml+wsmp-acc)
                 mr <- peekElemOff ptr (idx+1)
