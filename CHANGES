@@ -1,3 +1,6 @@
+0.1.5 - 110416
+* switched to vectors from lists for storing samples (~8% speedup)
+
 0.1.4 - 110407
 * improved mixToBuffer performance (~15% speedup)
 

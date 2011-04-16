@@ -10,15 +10,15 @@ module Sound.Hemkay.Loader (loadModule) where
 
 import Control.Applicative
 import Control.Monad
-import Data.Array.IO
 import Data.Binary.Get
 import Data.Bits
 import qualified Data.ByteString.Lazy as LS
 import qualified Data.ByteString.Char8 as S
 import Data.Maybe
+import Data.Vector.Unboxed (Vector)
+import qualified Data.Vector.Unboxed as V
 import Data.Word
 import Sound.Hemkay.Music
-import System.IO.Unsafe
 
 type TempInstrument = (String, Int, Int, Int, Int, Int)
 
@@ -139,12 +139,10 @@ mkInstrument :: (TempInstrument, [Char], Int) -> Instrument
 mkInstrument ((n,_,ft,vol,lbeg,llen),dat,num) =
   Instrument { ident = num
              , name = n
-             , wave = if llen <= 2 then dat'
-                      else take lbeg dat' ++ cycle (take llen (drop lbeg dat'))
+             , wave = mkWave lbeg llen (V.map charToFloat (V.fromList dat))
              , volume = fromIntegral vol/64
              , fineTune = mkFineTune ft
              }
-    where dat' = map charToFloat dat
 
 mkHalfNote :: Int -> Float
 mkHalfNote x = exp (log 2 * fromIntegral x/12)
@@ -153,8 +151,7 @@ mkFineTune :: Int -> Float
 mkFineTune x = exp (log 2 * fromIntegral (if x `mod` 16 < 8 then x `mod` 16 else x `mod` 16-16)/96)
 
 charToFloat :: Char -> Float
-charToFloat = unsafePerformIO . readArray floatSamples
+charToFloat c = V.unsafeIndex floatSamples (fromEnum c)
 
-floatSamples :: IOUArray Char Float
-floatSamples = unsafePerformIO $ newListArray ('\0','\255') floats
-  where floats = map (/128) ([0..127] ++ [-128..1])
+floatSamples :: Vector Float
+floatSamples = V.map (/128) (V.fromList ([0..127] ++ [-128..1]))

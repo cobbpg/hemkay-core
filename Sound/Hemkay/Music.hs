@@ -22,10 +22,18 @@ module Sound.Hemkay.Music
        , Instrument(..)
        , emptyInstrument
        , WaveData
+       , isEmpty
+       , mkWave
+       , emptyWave
+       , sampleWave
+       , stepWave
+       , fixWave
 
        ) where
 
 import Data.Maybe
+import Data.Vector.Unboxed (Vector)
+import qualified Data.Vector.Unboxed as V
 import Text.Printf
 
 data Song = Song
@@ -54,14 +62,59 @@ data Instrument = Instrument
                   , fineTune :: Float -- ^ Fine tune (-log_12 2..log_12 2).
                   }
 
-type WaveData = [Float]
+data WaveData = NullWave
+              | FiniteWave !Int !(Vector Float)
+              | LoopedWave !Int !Int !(Vector Float)
+
+instance Show WaveData where
+    show NullWave = "<none>"
+    show (FiniteWave _ v) = show (take 5 (V.toList v))
+    show (LoopedWave _ _ v) = show (take 5 (V.toList v))
+
+isEmpty :: WaveData -> Bool
+isEmpty NullWave = True
+isEmpty _        = False
+
+mkWave :: Int -> Int -> Vector Float -> WaveData
+mkWave loopBeg loopLen v
+    | loopLen <= 2 = FiniteWave 0 v
+    | otherwise    = LoopedWave 0 loopLen (V.take (loopBeg+loopLen) v)
+
+emptyWave :: WaveData
+emptyWave = NullWave
+
+sampleWave :: WaveData -> Float
+sampleWave NullWave = 0
+sampleWave (FiniteWave i v) = V.unsafeIndex v i
+sampleWave (LoopedWave i _ v) = V.unsafeIndex v i
+
+stepWave :: Int -> WaveData -> (Float, WaveData)
+stepWave _ NullWave = (0, NullWave)
+stepWave n (FiniteWave i v)
+    | i' >= V.length v = (V.unsafeIndex v i, NullWave)
+    | otherwise        = (V.unsafeIndex v i, FiniteWave i' v)
+  where
+    i' = i+n
+stepWave n (LoopedWave i l v)
+    | i' >= V.length v = (V.unsafeIndex v i, LoopedWave (i'-l) l v)
+    | otherwise        = (V.unsafeIndex v i, LoopedWave i' l v)
+  where
+    i' = i+n
+
+fixWave :: WaveData -> WaveData
+fixWave w@(LoopedWave i l v)
+    | i < V.length v = w
+    | otherwise = LoopedWave i' l v
+  where
+    i' = i-(1 + (i - V.length v) `quot` l)*l
+fixWave w = w
 
 instance Eq Instrument where
   i1 == i2 = ident i1 == ident i2
 
 instance Show Instrument where
   show (Instrument _ n dat vol ft) = "Instrument: " ++ show n ++
-                                     ", samples: " ++ show (take 5 dat) ++
+                                     ", samples: " ++ show dat ++
                                      ", volume: " ++ show vol ++
                                      ", finetune: " ++ show ft
 
@@ -71,7 +124,7 @@ emptyInstrument :: Instrument
 emptyInstrument = Instrument
                   { ident = 0
                   , name = ""
-                  , wave = []
+                  , wave = emptyWave
                   , volume = 0
                   , fineTune = 1
                   }
@@ -191,7 +244,7 @@ noteNames = ["C-", "C#", "D-", "D#", "E-", "F-", "F#", "G-", "G#", "A-", "A#", "
 -- | Waveforms needed for vibrato and tremolo effects.  The lists are
 -- infinite.
 waveForms :: [(Waveform, [Float])]
-waveForms = [(SineWave, cycle [sin (v*pi/32) | v <- [0..64]])
+waveForms = [(SineWave, cycle [sin (v*pi/32) | v <- [0..63]])
             ,(SawtoothWave, cycle [(v+0.5)/31.5 | v <- [-32..31]])
             ,(SquareWave, cycle (replicate 32 (-1) ++ replicate 32 1))
             ]

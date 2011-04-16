@@ -37,9 +37,6 @@ import Control.Arrow
 import Control.Monad
 import Control.Monad.Fix
 import Data.List
---import Prelude hiding (replicate,head,concat,map,(++),take,span,null,drop,last,
---                       concatMap,zipWith,(!!),tail,scanl,zip,splitAt,length)
---import Data.List.Stream
 import Data.Maybe
 import Foreign.Marshal.Array
 import Foreign.Ptr
@@ -113,7 +110,7 @@ startState numChn = PS { psTempo = 6
                        , psRow = Nothing
                        , psChannels = map chn [0..numChn]
                        }
-  where chn n = CS { csWaveData = []
+  where chn n = CS { csWaveData = emptyWave
                    , csPeriod = 0
                    , csFineTune = 1
                    , csSubSample = 0
@@ -151,7 +148,7 @@ prepareMix state = (tickLength (psBPM state), channels)
                         vol = clampVolume (csVolume cs + csTremoloDiff cs) /
                               fromIntegral (length (psChannels state))
                         (stepi,stepf) = properFraction (csSampleStep cs),
-                    not (null wd),
+                    not (isEmpty wd),
                     vol > 0.001]
 
 -- | Given a pointer to a float buffer and a number of samples desired
@@ -167,27 +164,32 @@ mixToBuffer ptr len ((cnt,dat):rest) = do
   let mixLen = min len cnt
   pokeArray ptr $ replicate (mixLen*2) 0
   dat' <- forM dat $ \d@(wd,wcnt,stepi,stepf,vol,pan) ->
-    if null wd then return d
+    if isEmpty wd then return d
     else case stepi of
       0 -> flip fix (mixLen,0,wd,wcnt) $ \fill (len,idx,wd,wcnt) ->
-        if null wd || len == 0 then return (wd,wcnt,stepi,stepf,vol,pan)
-        else do let wsmp = head wd*vol
+        if isEmpty wd || len == 0 then return (wd,wcnt,stepi,stepf,vol,pan)
+        else do let wsmp = wsmp'*vol
                     acc = wsmp*pan
                     wcnt' = wcnt+stepf
-                    (wd'',wcnt'') = if wcnt' < 1 then (wd,wcnt')
-                                    else (tail wd,wcnt'-1)
+                    (wsmp',wd'',wcnt'') =
+                        if wcnt' < 1 then (sampleWave wd,wd,wcnt')
+                        else case stepWave 1 wd of
+                            (s,w) -> (s,w,wcnt'-1)
                 ml <- peekElemOff ptr idx
                 pokeElemOff ptr idx (ml+wsmp-acc)
                 mr <- peekElemOff ptr (idx+1)
                 pokeElemOff ptr (idx+1) (mr+acc)
                 fill (len-1,idx+2,wd'',wcnt'')
       _ -> flip fix (mixLen,0,wd,wcnt) $ \fill (len,idx,wd,wcnt) ->
-        if null wd || len == 0 then return (wd,wcnt,stepi,stepf,vol,pan)
-        else do let wsmp = head wd*vol
+        if isEmpty wd || len == 0 then return (wd,wcnt,stepi,stepf,vol,pan)
+        else do let wsmp = wsmp'*vol
                     acc = wsmp*pan
                     wcnt' = wcnt+stepf
-                    (wd'',wcnt'') = if wcnt' < 1 then (drop stepi wd,wcnt')
-                                    else (drop stepi (tail wd),wcnt'-1)
+                    (wsmp',wd'',wcnt'') =
+                        if wcnt' < 1 then case stepWave stepi wd of
+                            (s,w) -> (s,w,wcnt')
+                        else case stepWave (stepi+1) wd of
+                            (s,w) -> (s,w,wcnt'-1)
                 ml <- peekElemOff ptr idx
                 pokeElemOff ptr idx (ml+wsmp-acc)
                 mr <- peekElemOff ptr (idx+1)
@@ -205,14 +207,14 @@ nextSample (cnt, dat) = cnt' `seq` dat' `seq` smp `seq` Just (smp, (cnt', dat'))
         (smp, dat') = accum dat [] (Smp 0 0)
         accum [] cs acc = (acc,cs)
         accum (d@(wd,wcnt,stepi,stepf,vol,pan):dat) cs acc@(Smp ml mr) =
-          if null wd then accum dat (d:cs) acc
+          if isEmpty wd then accum dat (d:cs) acc
           else acc' `seq` c `seq` accum dat (c:cs) acc'
             where c = wd'' `seq` wcnt'' `seq` (wd'',wcnt'',stepi,stepf,vol,pan)
-                  wsmp = head wd*vol
+                  wsmp = sampleWave wd*vol
                   acc' = Smp (ml+wsmp*(1-pan)) (mr+wsmp*pan)
                   wcnt' = wcnt+stepf
-                  (wd'',wcnt'') = if wcnt' < 1 then (drop stepi wd,wcnt')
-                                  else (drop (stepi+1) wd,wcnt'-1)
+                  (wd'',wcnt'') = if wcnt' < 1 then (snd (stepWave stepi wd),wcnt')
+                                  else (snd (stepWave (stepi+1) wd),wcnt'-1)
 
 -- | Mix a whole song in chunks, pairing up the play states with the
 -- respective chunks.
@@ -291,7 +293,7 @@ performTicks flatSong = unfoldr performRow (0, startState . length . head $ flat
 
         advanceSamples state = state { psChannels = map advanceSample (psChannels state) }
           where tickLen = tickLength (psBPM state)
-                advanceSample cs = cs { csWaveData = drop wdstep (csWaveData cs)
+                advanceSample cs = cs { csWaveData = fixWave (snd (stepWave wdstep (csWaveData cs)))
                                       , csSubSample = smp'
                                       }
                   where (wdstep,smp') = properFraction (csSubSample cs+csSampleStep cs*fromIntegral tickLen)
@@ -316,7 +318,7 @@ processNote (Note per ins eff) cs = cs'''
                       , csVolume = vol'
                       , csFineTune = fineTune ins'
                       , csWaveData = case eff of
-                           [SampleOffset o] -> drop o (wave ins')
+                           [SampleOffset o] -> fixWave (snd (stepWave o (wave ins')))
                            _ -> wave ins'
                       , csPeriod = per
                       }
@@ -420,6 +422,7 @@ targetPeriod cs = cs { csPeriod = period
                 then max (csTonePortaEnd cs) (csPeriod cs-csTonePortaSpeed cs)
                 else min (csTonePortaEnd cs) (csPeriod cs+csTonePortaSpeed cs)
 
+-- The upper limit is around 1.175
 sampleStep :: Int -> Float -> Float
 sampleStep p ft = baseFrequency / (fromIntegral p * sampleFrequency) * ft
 

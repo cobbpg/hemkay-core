@@ -1,5 +1,5 @@
 Name:                hemkay-core
-Version:             0.1.4
+Version:             0.1.5
 Cabal-Version:       >= 1.2
 Synopsis:            A device independent module music mixer
 Category:            sound, music
@@ -16,7 +16,7 @@ Description:
 
 Author:              Patai Gergely
 Maintainer:          Patai Gergely (patai.gergely@gmail.com)
-Copyright:           (c) 2010, Patai Gergely
+Copyright:           (c) 2010-2011, Patai Gergely
 License:             BSD3
 License-File:        LICENSE
 Stability:           experimental
@@ -32,5 +32,5 @@ Library
     Sound.Hemkay.Loader
     Sound.Hemkay.Mixer
 
-  Build-Depends:  base >= 4 && < 5, array, bytestring, binary
-  GHC-Options:    -Wall -O2
+  Build-Depends:  base >= 4 && < 5, vector, bytestring, binary
+  GHC-Options:    -Wall -O2 -funbox-strict-fields
