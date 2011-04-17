@@ -21,13 +21,15 @@ module Sound.Hemkay.Music
          -- * Instruments
        , Instrument(..)
        , emptyInstrument
-       , WaveData
+       , WaveData(..)
        , isEmpty
        , mkWave
        , emptyWave
+
+         -- * Waveform traversal (for internal use)
        , sampleWave
        , stepWave
-       , fixWave
+       , stepWave'
 
        ) where
 
@@ -57,57 +59,73 @@ instance Show Song where
 data Instrument = Instrument
                   { ident :: Int      -- ^ Instrument number, needed for equality check.
                   , name :: String    -- ^ Instrument name.
-                  , wave :: WaveData  -- ^ List of samples; infinite for looped instruments.
+                  , wave :: WaveData  -- ^ Sample waveform.
                   , volume :: Float   -- ^ Default volume (0..1).
                   , fineTune :: Float -- ^ Fine tune (-log_12 2..log_12 2).
                   }
 
-data WaveData = NullWave
-              | FiniteWave !Int !(Vector Float)
-              | LoopedWave !Int !Int !(Vector Float)
+-- | A cursor to traverse sample data.
+data WaveData = NullWave                              -- ^ Empty waveform
+              | FiniteWave !Int !(Vector Float)       -- ^ Finite waveform (with current index)
+              | LoopedWave !Int !Int !(Vector Float)  -- ^ Looped waveform (current index and loop length)
 
 instance Show WaveData where
     show NullWave = "<none>"
     show (FiniteWave _ v) = show (take 5 (V.toList v))
     show (LoopedWave _ _ v) = show (take 5 (V.toList v))
 
+-- | Check if we are at the end of the sample.
 isEmpty :: WaveData -> Bool
 isEmpty NullWave = True
 isEmpty _        = False
 
+-- | Create a sample cursor knowing the beginning and length of the
+-- loop.
 mkWave :: Int -> Int -> Vector Float -> WaveData
 mkWave loopBeg loopLen v
     | loopLen <= 2 = FiniteWave 0 v
     | otherwise    = LoopedWave 0 loopLen (V.take (loopBeg+loopLen) v)
 
+-- | An empty waveform.
 emptyWave :: WaveData
 emptyWave = NullWave
 
+-- | The current sample at the cursor.
 sampleWave :: WaveData -> Float
 sampleWave NullWave = 0
 sampleWave (FiniteWave i v) = V.unsafeIndex v i
 sampleWave (LoopedWave i _ v) = V.unsafeIndex v i
 
-stepWave :: Int -> WaveData -> (Float, WaveData)
-stepWave _ NullWave = (0, NullWave)
+-- | Advance the cursor by a given number of samples.
+stepWave :: Int -> WaveData -> WaveData
+stepWave _ NullWave = NullWave
 stepWave n (FiniteWave i v)
+    | i' >= V.length v = NullWave
+    | otherwise        = FiniteWave i' v
+  where
+    i' = i+n
+stepWave n (LoopedWave i l v)
+    | i' >= V.length v = LoopedWave i'' l v
+    | otherwise        = LoopedWave i' l v
+  where
+    i' = i+n
+    i'' = i'-(1 + (i' - V.length v) `quot` l)*l
+
+-- | Take the current sample at the cursor and advance the cursor
+-- efficiently by a given number of samples.  For looped samples, the
+-- number must be at most the loop length.
+stepWave' :: Int -> WaveData -> (Float, WaveData)
+stepWave' _ NullWave = (0, NullWave)
+stepWave' n (FiniteWave i v)
     | i' >= V.length v = (V.unsafeIndex v i, NullWave)
     | otherwise        = (V.unsafeIndex v i, FiniteWave i' v)
   where
     i' = i+n
-stepWave n (LoopedWave i l v)
+stepWave' n (LoopedWave i l v)
     | i' >= V.length v = (V.unsafeIndex v i, LoopedWave (i'-l) l v)
     | otherwise        = (V.unsafeIndex v i, LoopedWave i' l v)
   where
     i' = i+n
-
-fixWave :: WaveData -> WaveData
-fixWave w@(LoopedWave i l v)
-    | i < V.length v = w
-    | otherwise = LoopedWave i' l v
-  where
-    i' = i-(1 + (i - V.length v) `quot` l)*l
-fixWave w = w
 
 instance Eq Instrument where
   i1 == i2 = ident i1 == ident i2

@@ -38,6 +38,7 @@ import Control.Monad
 import Control.Monad.Fix
 import Data.List
 import Data.Maybe
+import qualified Data.Vector.Unboxed as V
 import Foreign.Marshal.Array
 import Foreign.Ptr
 import Foreign.Storable
@@ -173,7 +174,7 @@ mixToBuffer ptr len ((cnt,dat):rest) = do
                     wcnt' = wcnt+stepf
                     (wsmp',wd'',wcnt'') =
                         if wcnt' < 1 then (sampleWave wd,wd,wcnt')
-                        else case stepWave 1 wd of
+                        else case stepWave' 1 wd of
                             (s,w) -> (s,w,wcnt'-1)
                 ml <- peekElemOff ptr idx
                 pokeElemOff ptr idx (ml+wsmp-acc)
@@ -186,15 +187,52 @@ mixToBuffer ptr len ((cnt,dat):rest) = do
                     acc = wsmp*pan
                     wcnt' = wcnt+stepf
                     (wsmp',wd'',wcnt'') =
-                        if wcnt' < 1 then case stepWave stepi wd of
+                        if wcnt' < 1 then case stepWave' stepi wd of
                             (s,w) -> (s,w,wcnt')
-                        else case stepWave (stepi+1) wd of
+                        else case stepWave' (stepi+1) wd of
                             (s,w) -> (s,w,wcnt'-1)
                 ml <- peekElemOff ptr idx
                 pokeElemOff ptr idx (ml+wsmp-acc)
                 mr <- peekElemOff ptr (idx+1)
                 pokeElemOff ptr (idx+1) (mr+acc)
                 fill (len-1,idx+2,wd'',wcnt'')
+
+-- Why is this slower than the solution above (even if we comment out
+-- the special 0 case)?  This takes 50% more time (GHC 6.12.1), even
+-- though it should actually be doing a bit less work.
+
+--    case wd of
+--      NullWave -> return d
+--      FiniteWave i v -> case stepi of
+--        _ -> flip fix (mixLen,0,i,wcnt) $ \fill (len,idx,i,wcnt) ->
+--          if i >= V.length v then return (NullWave,wcnt,stepi,stepf,vol,pan)
+--          else if len == 0 then return (FiniteWave i v,wcnt,stepi,stepf,vol,pan)
+--            else do
+--            let wsmp = V.unsafeIndex v i*vol
+--                acc = wsmp*pan
+--                wcnt' = wcnt+stepf
+--                (i',wcnt'') = if wcnt' < 1 then (i+stepi,wcnt') else (i+stepi+1,wcnt'-1)
+--            ml <- peekElemOff ptr idx
+--            pokeElemOff ptr idx (ml+wsmp-acc)
+--            mr <- peekElemOff ptr (idx+1)
+--            pokeElemOff ptr (idx+1) (mr+acc)
+--            fill (len-1,idx+2,i',wcnt'')
+--      LoopedWave i l v -> case stepi of
+--        _ -> flip fix (mixLen,0,i,wcnt) $ \fill (len,idx,i,wcnt) ->
+--          if len == 0 then return (LoopedWave i l v,wcnt,stepi,stepf,vol,pan)
+--          else do
+--            let wsmp = V.unsafeIndex v i*vol
+--                acc = wsmp*pan
+--                wcnt' = wcnt+stepf
+--                (i',wcnt'')
+--                    | wcnt' < 1 = let i' = i+stepi in (if i' >= V.length v then i'-l else i',wcnt')
+--                    | otherwise = let i' = i+stepi+1 in (if i' >= V.length v then i'-l else i',wcnt'-1)
+--            ml <- peekElemOff ptr idx
+--            pokeElemOff ptr idx (ml+wsmp-acc)
+--            mr <- peekElemOff ptr (idx+1)
+--            pokeElemOff ptr (idx+1) (mr+acc)
+--            fill (len-1,idx+2,i',wcnt'')
+
   if mixLen == len then return $ Just ((cnt-mixLen,dat'):rest)
     else mixToBuffer (advancePtr ptr (mixLen*2)) (len-mixLen) rest
 
@@ -213,8 +251,8 @@ nextSample (cnt, dat) = cnt' `seq` dat' `seq` smp `seq` Just (smp, (cnt', dat'))
                   wsmp = sampleWave wd*vol
                   acc' = Smp (ml+wsmp*(1-pan)) (mr+wsmp*pan)
                   wcnt' = wcnt+stepf
-                  (wd'',wcnt'') = if wcnt' < 1 then (snd (stepWave stepi wd),wcnt')
-                                  else (snd (stepWave (stepi+1) wd),wcnt'-1)
+                  (wd'',wcnt'') = if wcnt' < 1 then (stepWave stepi wd,wcnt')
+                                  else (stepWave (stepi+1) wd,wcnt'-1)
 
 -- | Mix a whole song in chunks, pairing up the play states with the
 -- respective chunks.
@@ -293,7 +331,7 @@ performTicks flatSong = unfoldr performRow (0, startState . length . head $ flat
 
         advanceSamples state = state { psChannels = map advanceSample (psChannels state) }
           where tickLen = tickLength (psBPM state)
-                advanceSample cs = cs { csWaveData = fixWave (snd (stepWave wdstep (csWaveData cs)))
+                advanceSample cs = cs { csWaveData = stepWave wdstep (csWaveData cs)
                                       , csSubSample = smp'
                                       }
                   where (wdstep,smp') = properFraction (csSubSample cs+csSampleStep cs*fromIntegral tickLen)
@@ -318,7 +356,7 @@ processNote (Note per ins eff) cs = cs'''
                       , csVolume = vol'
                       , csFineTune = fineTune ins'
                       , csWaveData = case eff of
-                           [SampleOffset o] -> fixWave (snd (stepWave o (wave ins')))
+                           [SampleOffset o] -> stepWave o (wave ins')
                            _ -> wave ins'
                       , csPeriod = per
                       }

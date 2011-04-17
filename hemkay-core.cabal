@@ -33,4 +33,4 @@ Library
     Sound.Hemkay.Mixer
 
   Build-Depends:  base >= 4 && < 5, vector, bytestring, binary
-  GHC-Options:    -Wall -O2 -funbox-strict-fields
+  GHC-Options:    -Wall -O2
